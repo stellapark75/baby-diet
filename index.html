@@ -140,16 +140,14 @@ const TRANS={
     perfectSub:'탄단지 비율과 주요 미량영양소가 모두 권장 범위 안에 있어요.',
     recTypePair:'🤝 어울리는 재료', recTypeNew:'🌟 새 도전', recTypeCombo:'💛 조합 추천', recTypeNutrition:'🥗 영양 보완',
     fullMealBtn:'완밥',
-    scanPhotos:'📷 영양정보 사진 업로드', scanBtn:'AI 스캔', scanning:'스캔 중...',
-    scanHint:'제품 영양정보 · 원재료 사진을 올려주세요 (여러 장 가능)',
-    scanReview:'스캔 결과 확인 · 수정', scanConfirm:'✓ 확인 완료',
-    scanNutrition:'영양정보 (1회 제공량 기준)', servingSize:'1회 제공량 (g)',
-    scanIngredients:'원재료 목록', scanAddIng:'+ 재료 추가',
-    scanError:'스캔 실패. API 키를 확인하거나 다시 시도해주세요.',
-    scanNoApi:'Anthropic API 키를 설정에서 입력하면 사진으로 영양정보를 자동 추출할 수 있어요.',
     commercialTag:'시판',
-    apiKeyLabel:'Anthropic API 키 (시판 영양 스캔용)',
-    apiKeyHint:'기기에만 저장되며, 사진 스캔 요청에만 사용됩니다.',
+    commTitle:'📋 영양정보 · 원재료 (선택)',
+    commHint:'포장지에 적힌 영양정보와 원재료를 한 칸에 쭉 적어주세요. 자동으로 정리해드려요. (비워두셔도 됩니다)',
+    commPlaceholder:'예: 나트륨112mg 탄수화물29g 지방2.9g 포화지방1g 단백질5.9g, 쌀 쇠고기 무 양배추 다시마',
+    commParsedNutri:'인식된 영양정보',
+    commParsedIng:'인식된 원재료',
+    commNothing:'아직 인식된 내용이 없어요. 위에 영양정보·원재료를 적어보세요.',
+    commServing:'1회 제공량',
     langBtn:'EN',
   },
   en:{
@@ -226,16 +224,14 @@ const TRANS={
     perfectSub:'All macros and key micronutrients are within recommended ranges.',
     recTypePair:'🤝 Pairs well', recTypeNew:'🌟 Try new', recTypeCombo:'💛 Combo idea', recTypeNutrition:'🥗 Nutrition boost',
     fullMealBtn:'All eaten',
-    scanPhotos:'📷 Upload nutrition label', scanBtn:'AI Scan', scanning:'Scanning...',
-    scanHint:'Upload photos of the nutrition label and ingredients list (multiple OK)',
-    scanReview:'Review & edit scan results', scanConfirm:'✓ Confirm',
-    scanNutrition:'Nutrition info (per serving)', servingSize:'Serving size (g)',
-    scanIngredients:'Ingredient list', scanAddIng:'+ Add ingredient',
-    scanError:'Scan failed. Check your API key and try again.',
-    scanNoApi:'Enter your Anthropic API key in Settings to scan nutrition labels automatically.',
     commercialTag:'Store-bought',
-    apiKeyLabel:'Anthropic API key (for product label scanning)',
-    apiKeyHint:'Stored on this device only. Used only for label scan requests.',
+    commTitle:'📋 Nutrition & ingredients (optional)',
+    commHint:'Type the nutrition facts and ingredients from the package in one box. We\'ll organise it for you. (Optional)',
+    commPlaceholder:'e.g. sodium 112mg carbs 29g fat 2.9g sat.fat 1g protein 5.9g, rice beef radish cabbage kelp',
+    commParsedNutri:'Detected nutrition',
+    commParsedIng:'Detected ingredients',
+    commNothing:'Nothing detected yet. Type the nutrition facts and ingredients above.',
+    commServing:'Serving size',
     langBtn:'KO',
   }
 };
@@ -347,6 +343,39 @@ function getRec(birth){
     carbs:{min:55,max:65},protein:{min:7,max:20},fat:{min:20,max:35},note:'유아식 전환기.'};
   return{src:'보건복지부 KDRIs 2020 (24개월+)',age:`생후 ${d}일·${mo}개월`,
     carbs:{min:55,max:65},protein:{min:7,max:20},fat:{min:15,max:30},note:'유아 완료기.'};
+}
+
+// ── 시판 제품 자유 텍스트 파서 (API 없이 클라이언트에서 정리) ──────────────────
+// "나트륨112mg 탄수화물29g 지방2.9g 단백질5.9g, 쌀 쇠고기 무" 같은 자유 입력을
+// 영양정보(탄·단·지·칼로리 등)와 원재료 목록으로 분해한다.
+function parseCommercialText(text){
+  const empty={kcal:0,carbs:0,protein:0,fat:0,satFat:0,sodium:0,sugar:0,servingSize:0,ingredients:[],hasNutrition:false};
+  if(!text||!text.trim())return empty;
+  const t=text.replace(/그램|그람/g,'g');
+  const grab=re=>{const m=t.match(re);return m?parseFloat(m[1]):0;};
+  // 포화지방을 먼저 따로 빼서 '지방'과 충돌 방지
+  const satFat=grab(/포화지방\s*[:=]?\s*([\d.]+)/);
+  const tNoSat=t.replace(/포화지방\s*[:=]?\s*[\d.]+\s*g?/g,' ').replace(/트랜스지방\s*[:=]?\s*[\d.]+\s*g?/g,' ');
+  const fat=(()=>{const m=tNoSat.match(/지방\s*[:=]?\s*([\d.]+)/);return m?parseFloat(m[1]):0;})();
+  const carbs=grab(/탄수화물\s*[:=]?\s*([\d.]+)/);
+  const protein=grab(/단백질\s*[:=]?\s*([\d.]+)/);
+  const sugar=grab(/당류\s*[:=]?\s*([\d.]+)/);
+  const sodium=grab(/나트륨\s*[:=]?\s*([\d.]+)/);
+  let kcal=grab(/(?:열량|칼로리|에너지)\s*[:=]?\s*([\d.]+)/);
+  if(!kcal){const m=t.match(/([\d.]+)\s*kcal/i);if(m)kcal=parseFloat(m[1]);}
+  const servingSize=grab(/(?:1회\s*제공량|제공량|총\s*내용량|총내용량|중량)\s*[:=]?\s*([\d.]+)\s*g/);
+  // 원재료: 영양 토큰을 제거하고 남은 텍스트를 분리
+  let ing=text.replace(/그램|그람/g,'g')
+    .replace(/(열량|칼로리|에너지|나트륨|탄수화물|당류|식이섬유|포화지방|트랜스지방|지방|단백질|콜레스테롤|1회\s*제공량|제공량|총\s*내용량|총내용량|중량)\s*[:=]?\s*[\d.]+\s*(kcal|mg|g|%)?/g,' ')
+    .replace(/[\d.]+\s*(kcal|mg|g|%)/gi,' ')
+    .replace(/[\d.]+%?/g,' ')
+    .replace(/포함|원재료명?|함유|기타|및|입니다|이상/g,' ');
+  const ingredients=[...new Set(
+    ing.split(/[,，、·・/\s]+/).map(s=>s.trim())
+      .filter(s=>s&&(/[가-힣]/.test(s)||/[A-Za-z]{2,}/.test(s)))
+  )];
+  return{kcal,carbs,protein,fat,satFat,sodium,sugar,servingSize,ingredients,
+    hasNutrition:!!(kcal||carbs||protein||fat)};
 }
 
 // ── 영양 계산 (식단별 섭취율 적용) ──────────────────────────────────────────────
@@ -932,20 +961,9 @@ function MealModal({editMeal,onSave,onClose,allergy,selectedDate,lang='ko'}){
   const[totalMade,setTotalMade]=useState(String(editMeal?.totalMadeGrams||''));
   const[totalEaten,setTotalEaten]=useState(String(editMeal?.totalEatenGrams||''));
 
-  // 시판 스캔 상태
-  const[photos,setPhotos]=useState([]);
-  const[scanState,setScanState]=useState('idle'); // idle|scanning|review|error
-  const[scannedNutrition,setScannedNutrition]=useState(
-    editMeal?.commercialNutrition
-      ?{kcal:String(editMeal.commercialNutrition.kcal||''),carbs:String(editMeal.commercialNutrition.carbs||''),
-        protein:String(editMeal.commercialNutrition.protein||''),fat:String(editMeal.commercialNutrition.fat||''),
-        servingSize:String(editMeal.commercialNutrition.servingSize||'')}
-      :{kcal:'',carbs:'',protein:'',fat:'',servingSize:''}
-  );
-  const[scannedIngs,setScannedIngs]=useState(
-    editMeal?.commercialIngredients||[]
-  );
-  const[scanConfirmed,setScanConfirmed]=useState(!!(editMeal?.commercialNutrition));
+  // 시판 영양/원재료 자유 입력 (사진 스캔 없이 텍스트 한 칸 → 자동 파싱)
+  const[commText,setCommText]=useState(editMeal?.commercialText||'');
+  const commParsed=React.useMemo(()=>parseCommercialText(commText),[commText]);
 
   const addIng=()=>setIngs(p=>[...p,{id:genId(),name:'',grams:''}]);
   const remIng=id=>setIngs(p=>p.filter(i=>i.id!==id));
@@ -958,69 +976,30 @@ function MealModal({editMeal,onSave,onClose,allergy,selectedDate,lang='ko'}){
   const eatenN=Number(totalEaten)||0;
   const eatPct=madeN>0?Math.round(eatenN/madeN*100):null;
 
-  const handlePhotoAdd=e=>{
-    Array.from(e.target.files||[]).forEach(file=>{
-      const reader=new FileReader();
-      reader.onload=ev=>setPhotos(p=>[...p,{id:genId(),dataUrl:ev.target.result,type:file.type||'image/jpeg',name:file.name}]);
-      reader.readAsDataURL(file);
-    });
-    e.target.value='';
-  };
-
-  const handleScan=async()=>{
-    const apiKey=localStorage.getItem('babyDiet_apiKey')||'';
-    if(!apiKey.trim()){alert(t(lang,'scanNoApi'));return;}
-    if(!photos.length){alert(lang==='en'?'Please upload at least one photo.':'사진을 1장 이상 올려주세요.');return;}
-    setScanState('scanning');
-    try{
-      const content=[
-        ...photos.map(p=>({type:'image',source:{type:'base64',media_type:p.type,data:p.dataUrl.split(',')[1]}})),
-        {type:'text',text:`This is a photo of a commercial baby food product. Extract the following as JSON only (no other text):
-{
-  "productName": "string or null",
-  "nutrition": {"kcal": number, "carbs": number, "protein": number, "fat": number, "servingSize": number},
-  "ingredients": ["ingredient1", "ingredient2", ...]
-}
-Use null for missing values. Numbers only (no units). ingredients should be individual food items.`}
-      ];
-      const res=await fetch('https://api.anthropic.com/v1/messages',{
-        method:'POST',
-        headers:{'x-api-key':apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true','content-type':'application/json'},
-        body:JSON.stringify({model:'claude-haiku-4-5-20251001',max_tokens:1024,messages:[{role:'user',content}]})
-      });
-      if(!res.ok)throw new Error(await res.text());
-      const data=await res.json();
-      const raw=data.content[0].text.replace(/```json\n?/g,'').replace(/```\n?/g,'').trim();
-      const parsed=JSON.parse(raw);
-      if(parsed.nutrition){
-        const n=parsed.nutrition;
-        setScannedNutrition({kcal:String(n.kcal??''),carbs:String(n.carbs??''),protein:String(n.protein??''),fat:String(n.fat??''),servingSize:String(n.servingSize??'')});
-      }
-      if(parsed.ingredients?.length){
-        setScannedIngs(parsed.ingredients.map(nm=>({id:genId(),name:nm})));
-      }
-      if(parsed.productName&&!ings.filter(i=>i.name.trim()).length){
-        setIngs([{id:genId(),name:parsed.productName,grams:''},{id:genId(),name:'',grams:''},{id:genId(),name:'',grams:''}]);
-      }
-      setScanState('review');
-      setScanConfirmed(false);
-    }catch(e){console.error(e);setScanState('error');}
-  };
-
   const handleSave=()=>{
     const v=ings.filter(i=>i.name.trim());
-    if(!v.length&&!scannedIngs.filter(i=>i.name?.trim()).length){alert(lang==='en'?'Enter at least one ingredient.':'재료를 1개 이상 입력해주세요.');return;}
-    const allV=v.length?v:scannedIngs.filter(i=>i.name?.trim());
-    const cn=isCommercial&&scanConfirmed&&scannedNutrition.kcal
-      ?{kcal:Number(scannedNutrition.kcal)||0,carbs:Number(scannedNutrition.carbs)||0,protein:Number(scannedNutrition.protein)||0,fat:Number(scannedNutrition.fat)||0,servingSize:Number(scannedNutrition.servingSize)||100}
-      :null;
+    if(!v.length){alert(lang==='en'?(isCommercial?'Enter the product name.':'Enter at least one ingredient.'):(isCommercial?'제품명을 입력해주세요.':'재료를 1개 이상 입력해주세요.'));return;}
+    if(isCommercial){
+      const p=commParsed;
+      const cn=p.hasNutrition
+        ?{kcal:p.kcal||0,carbs:p.carbs||0,protein:p.protein||0,fat:p.fat||0,
+          satFat:p.satFat||0,sodium:p.sodium||0,sugar:p.sugar||0,servingSize:p.servingSize||0}
+        :null;
+      onSave({
+        id:editMeal?.id||genId(),type,time,memo,liked,isCommercial:true,
+        commercialNutrition:cn,
+        commercialText:commText,
+        commercialIngredients:p.ingredients,
+        totalMadeGrams:0,totalEatenGrams:0,
+        ingredients:v.map(i=>({id:i.id,name:i.name.trim(),grams:0,isCommercial:true}))
+      }, date);
+      return;
+    }
     onSave({
-      id:editMeal?.id||genId(),type,time,memo,liked,isCommercial,
-      commercialNutrition:cn,
-      commercialIngredients:isCommercial?scannedIngs.filter(i=>i.name?.trim()).map(i=>i.name.trim()):[],
-      totalMadeGrams:isCommercial&&cn?Number(scannedNutrition.servingSize)||100:madeN,
-      totalEatenGrams:isCommercial&&cn?Number(totalEaten||scannedNutrition.servingSize)||100:(eatenN||madeN),
-      ingredients:allV.map(i=>({id:i.id,name:i.name.trim(),grams:Number(i.grams)||0,isCommercial:isCommercial}))
+      id:editMeal?.id||genId(),type,time,memo,liked,isCommercial:false,
+      commercialNutrition:null,commercialText:'',commercialIngredients:[],
+      totalMadeGrams:madeN,totalEatenGrams:eatenN||madeN,
+      ingredients:v.map(i=>({id:i.id,name:i.name.trim(),grams:Number(i.grams)||0,isCommercial:false}))
     }, date);
   };
 
@@ -1059,23 +1038,13 @@ Use null for missing values. Numbers only (no units). ingredients should be indi
               <div style={{display:'flex',borderBottom:'1.5px solid #F3F4F6'}}>
                 <button onClick={()=>setLiked(v=>!v)}
                   className="flex-1 py-2 text-xs font-bold transition-all"
-                  style={{
-                    color:liked?'#C4703D':'#9CA3AF',
-                    borderBottom:liked?'2.5px solid #E68A58':'2.5px solid transparent',
-                    marginBottom:-1,background:'none',border:'none',
-                    borderBottom:liked?'2.5px solid #E68A58':'2.5px solid transparent',
-                  }}>
+                  style={{color:liked?'#C4703D':'#9CA3AF',marginBottom:-1,background:'none',border:'none',borderBottom:liked?'2.5px solid #E68A58':'2.5px solid transparent'}}>
                   <span style={{display:'inline-block',width:7,height:7,borderRadius:'50%',background:liked?'#E68A58':'#D1D5DB',marginRight:4,verticalAlign:'middle'}}/>
                   {t(lang,'likedMeal')}
                 </button>
                 <button onClick={()=>setIsCommercial(v=>!v)}
                   className="flex-1 py-2 text-xs font-bold transition-all"
-                  style={{
-                    color:isCommercial?'#2A6280':'#9CA3AF',
-                    borderBottom:isCommercial?'2.5px solid #4482A3':'2.5px solid transparent',
-                    marginBottom:-1,background:'none',border:'none',
-                    borderBottom:isCommercial?'2.5px solid #4482A3':'2.5px solid transparent',
-                  }}>
+                  style={{color:isCommercial?'#2A6280':'#9CA3AF',marginBottom:-1,background:'none',border:'none',borderBottom:isCommercial?'2.5px solid #4482A3':'2.5px solid transparent'}}>
                   <span style={{display:'inline-block',width:7,height:7,borderRadius:'50%',background:isCommercial?'#4482A3':'#D1D5DB',marginRight:4,verticalAlign:'middle'}}/>
                   {t(lang,'commercialTag')}
                 </button>
@@ -1089,104 +1058,54 @@ Use null for missing values. Numbers only (no units). ingredients should be indi
                 className="border border-gray-200 rounded-xl px-3 py-2 w-full text-sm"/>
             </div>
 
-            {/* ─── 시판 스캔 섹션 ─── */}
+            {/* ─── 시판 영양·원재료 자유 입력 ─── */}
             {isCommercial&&(
               <div className="bg-[#E8F4F8] border border-[#9BC0CC] rounded-xl p-3 space-y-3">
-                <div className="font-semibold text-xs text-[#2A6280]">{t(lang,'scanPhotos')}</div>
-                <p className="text-xs text-[#4482A3]">{t(lang,'scanHint')}</p>
+                <div className="font-semibold text-xs text-[#2A6280]">{t(lang,'commTitle')}</div>
+                <p className="text-xs text-[#4482A3]">{t(lang,'commHint')}</p>
 
-                {/* 사진 업로드 + 썸네일 */}
-                <div className="flex flex-wrap gap-2 items-center">
-                  {photos.map(p=>(
-                    <div key={p.id} className="relative w-16 h-16 rounded-lg overflow-hidden border border-[#9BC0CC]">
-                      <img src={p.dataUrl} className="w-full h-full object-cover"/>
-                      <button onClick={()=>setPhotos(ps=>ps.filter(x=>x.id!==p.id))}
-                        className="absolute top-0 right-0 w-5 h-5 bg-red-400 text-white text-xs flex items-center justify-center rounded-bl-lg">×</button>
-                    </div>
-                  ))}
-                  <label className="w-16 h-16 flex flex-col items-center justify-center rounded-lg border-2 border-dashed border-[#9BC0CC] cursor-pointer hover:bg-[#D4EBF3] transition-colors text-[#4482A3]">
-                    <span className="text-2xl leading-none">+</span>
-                    <span className="text-xs mt-0.5">{lang==='en'?'Photo':'사진'}</span>
-                    <input type="file" accept="image/*" multiple className="hidden" onChange={handlePhotoAdd}/>
-                  </label>
-                </div>
+                <textarea value={commText} onChange={e=>setCommText(e.target.value)}
+                  rows={3} placeholder={t(lang,'commPlaceholder')}
+                  className="w-full border border-[#9BC0CC] rounded-xl px-3 py-2 text-sm bg-white resize-none"/>
 
-                {/* 스캔 버튼 */}
-                {photos.length>0&&scanState!=='review'&&(
-                  <button onClick={handleScan} disabled={scanState==='scanning'}
-                    className="w-full py-2.5 rounded-xl font-semibold text-sm text-white transition-all"
-                    style={{background:scanState==='scanning'?'#9BC0CC':'linear-gradient(135deg,#4482A3,#2A6280)'}}>
-                    {scanState==='scanning'?t(lang,'scanning'):t(lang,'scanBtn')}
-                  </button>
-                )}
-                {scanState==='error'&&(
-                  <p className="text-xs text-red-500 text-center">{t(lang,'scanError')}</p>
-                )}
-
-                {/* 스캔 결과 리뷰 */}
-                {scanState==='review'&&(
-                  <div className="space-y-3 border-t border-[#9BC0CC] pt-3">
-                    <div className="font-semibold text-xs text-[#2A6280]">{t(lang,'scanReview')}</div>
-
-                    {/* 영양정보 편집 */}
-                    <div>
-                      <div className="text-xs font-semibold text-gray-500 mb-1.5">{t(lang,'scanNutrition')}</div>
-                      <div className="grid grid-cols-5 gap-1.5">
-                        {[['kcal','kcal'],['carbs',t(lang,'macros').carbs],['protein',t(lang,'macros').protein],['fat',t(lang,'macros').fat],['servingSize',t(lang,'servingSize')]].map(([k,lbl])=>(
-                          <div key={k}>
-                            <div className="text-xs text-gray-400 text-center mb-0.5" style={{fontSize:10}}>{lbl}</div>
-                            <input type="number" value={scannedNutrition[k]} onChange={e=>setScannedNutrition(p=>({...p,[k]:e.target.value}))}
-                              className="w-full border border-[#9BC0CC] rounded-lg px-1 py-1.5 text-xs text-center bg-white" placeholder="0" min="0"/>
-                          </div>
-                        ))}
+                {/* 자동 인식 결과 미리보기 */}
+                {(commParsed.hasNutrition||commParsed.ingredients.length>0)?(
+                  <div className="space-y-2.5 border-t border-[#9BC0CC] pt-2.5">
+                    {commParsed.hasNutrition&&(
+                      <div>
+                        <div className="text-xs font-semibold text-gray-500 mb-1">{t(lang,'commParsedNutri')}</div>
+                        <div className="flex flex-wrap gap-1.5">
+                          {[
+                            ['kcal',commParsed.kcal,'kcal'],
+                            [t(lang,'macros').carbs,commParsed.carbs,'g'],
+                            [t(lang,'macros').protein,commParsed.protein,'g'],
+                            [t(lang,'macros').fat,commParsed.fat,'g'],
+                            [lang==='en'?'sat.fat':'포화지방',commParsed.satFat,'g'],
+                            [lang==='en'?'sugar':'당류',commParsed.sugar,'g'],
+                            [lang==='en'?'sodium':'나트륨',commParsed.sodium,'mg'],
+                            [t(lang,'commServing'),commParsed.servingSize,'g'],
+                          ].filter(([,v])=>v>0).map(([lbl,v,u])=>(
+                            <span key={lbl} className="text-xs bg-white border border-[#9BC0CC] text-[#2A6280] px-2 py-1 rounded-lg">
+                              {lbl} <b>{v}{u}</b>
+                            </span>
+                          ))}
+                        </div>
                       </div>
-                    </div>
-
-                    {/* 원재료 편집 */}
-                    <div>
-                      <div className="text-xs font-semibold text-gray-500 mb-1.5">{t(lang,'scanIngredients')}</div>
-                      <div className="space-y-1.5">
-                        {scannedIngs.map((si,idx)=>(
-                          <div key={si.id} className="flex gap-1.5 items-center">
-                            <input type="text" value={si.name} onChange={e=>setScannedIngs(p=>p.map((x,i)=>i===idx?{...x,name:e.target.value}:x))}
-                              className="flex-1 border border-[#9BC0CC] rounded-lg px-2 py-1.5 text-xs bg-white"/>
-                            <button onClick={()=>setScannedIngs(p=>p.filter((_,i)=>i!==idx))} className="text-gray-300 hover:text-red-400 text-base">×</button>
-                          </div>
-                        ))}
-                        <button onClick={()=>setScannedIngs(p=>[...p,{id:genId(),name:''}])}
-                          className="text-xs text-[#4482A3] font-semibold">{t(lang,'scanAddIng')}</button>
-                      </div>
-                    </div>
-
-                    {/* 확인 완료 + 재스캔 */}
-                    <div className="flex gap-2">
-                      <button onClick={()=>{setScanState('idle');setPhotos([]);}}
-                        className="flex-1 py-2 rounded-xl border border-[#9BC0CC] text-xs text-[#4482A3] font-semibold">
-                        {lang==='en'?'Re-scan':'다시 스캔'}
-                      </button>
-                      <button onClick={()=>setScanConfirmed(true)}
-                        className={`flex-1 py-2 rounded-xl text-xs font-semibold text-white transition-all ${scanConfirmed?'bg-[#5E8C78]':'bg-[#4482A3]'}`}>
-                        {scanConfirmed?'✓ '+(lang==='en'?'Confirmed':'확인됨'):t(lang,'scanConfirm')}
-                      </button>
-                    </div>
-
-                    {/* 섭취량 */}
-                    {scanConfirmed&&(
-                      <div className="flex items-center gap-2">
-                        <label className="text-xs text-gray-500 flex-shrink-0">{t(lang,'totalEaten')}</label>
-                        <input type="number" placeholder={scannedNutrition.servingSize||'0'} value={totalEaten}
-                          onChange={e=>setTotalEaten(e.target.value)}
-                          className="flex-1 border border-[#FFE4D2] rounded-xl px-3 py-1.5 text-sm text-center bg-white" min="0"/>
-                        <button onClick={()=>setTotalEaten(scannedNutrition.servingSize||'')}
-                          className="text-xs px-3 py-1.5 rounded-full border border-[#9BC0CC] text-[#4482A3] font-semibold">{t(lang,'fullMealBtn')}</button>
+                    )}
+                    {commParsed.ingredients.length>0&&(
+                      <div>
+                        <div className="text-xs font-semibold text-gray-500 mb-1">{t(lang,'commParsedIng')} ({commParsed.ingredients.length})</div>
+                        <div className="flex flex-wrap gap-1">
+                          {commParsed.ingredients.map((nm,i)=>(
+                            <span key={i} className="text-xs bg-[#DBEAF5] text-[#2A6280] px-2 py-0.5 rounded-full">{nm}</span>
+                          ))}
+                        </div>
                       </div>
                     )}
                   </div>
-                )}
-
-                {!localStorage.getItem('babyDiet_apiKey')&&scanState==='idle'&&photos.length===0&&(
-                  <p className="text-xs text-[#4482A3] opacity-70">{t(lang,'scanNoApi')}</p>
-                )}
+                ):commText.trim()?(
+                  <p className="text-xs text-[#4482A3] opacity-70">{t(lang,'commNothing')}</p>
+                ):null}
               </div>
             )}
 
@@ -1559,8 +1478,6 @@ function IngsView({meals,liked,allergy,onLike,onAllergy,lang='ko'}){
 // ── 설정 뷰 ───────────────────────────────────────────────────────────────────
 function Settings({babyName,setBabyName,birthDate,setBirthDate,allergy,setAllergy,lang='ko'}){
   const[na,setNa]=useState('');const[ln,setLn]=useState(babyName);
-  const[apiKey,setApiKey]=useState(()=>localStorage.getItem('babyDiet_apiKey')||'');
-  const saveApiKey=()=>{localStorage.setItem('babyDiet_apiKey',apiKey.trim());alert(lang==='en'?'API key saved.':'API 키가 저장되었습니다.');};
   return(
     <div className="space-y-4">
       <div className="bg-white rounded-2xl shadow-sm p-4">
@@ -1599,16 +1516,6 @@ function Settings({babyName,setBabyName,birthDate,setBirthDate,allergy,setAllerg
             ))}
           </div>
         )}
-      </div>
-      <div className="bg-white rounded-2xl shadow-sm p-4">
-        <h2 className="font-bold text-gray-800 mb-1 text-sm">🔑 {t(lang,'apiKeyLabel')}</h2>
-        <p className="text-xs text-gray-400 mb-3">{t(lang,'apiKeyHint')}</p>
-        <div className="flex gap-2">
-          <input type="password" value={apiKey} onChange={e=>setApiKey(e.target.value)}
-            placeholder="sk-ant-api03-..." className="flex-1 border border-gray-200 rounded-xl px-3 py-2 text-sm font-mono"/>
-          <button onClick={saveApiKey} className="px-4 py-2 rounded-xl text-white text-sm" style={{background:'#4482A3'}}>{t(lang,'save')}</button>
-        </div>
-        {apiKey&&<p className="text-xs text-[#5E8C78] mt-1.5">✓ {lang==='en'?'Key set':'키 입력됨'}</p>}
       </div>
       <div className="bg-[#DBEAF5] border border-[#9BC0CC] rounded-2xl p-4">
         <h3 className="font-semibold text-[#2A6280] mb-1.5 text-sm">📚 {t(lang,'nutSrc')}</h3>
