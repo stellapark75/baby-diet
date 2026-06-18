@@ -139,6 +139,7 @@ const TRANS={
     perfectCombo:'완벽한 조합이에요!',
     perfectSub:'탄단지 비율과 주요 미량영양소가 모두 권장 범위 안에 있어요.',
     recTypePair:'🤝 어울리는 재료', recTypeNew:'🌟 새 도전', recTypeCombo:'💛 조합 추천', recTypeNutrition:'🥗 영양 보완',
+    introSrc:'도입 시기 기준: WHO 보완식 지침(2023) · 식약처 영유아 이유식 가이드 · 대한소아청소년과학회 영아영양 지침',
     peerMeals:'🍽 또래 이유식 식단 참고', peerHint:'같은 시기 아이들의 식단 예시를 외부에서 찾아볼 수 있어요.',
     peerDisc:'※ 외부 검색 결과로, 공식 의학정보가 아닌 참고용입니다. 새 재료 도입 시 알레르기를 확인하세요.',
     fullMealBtn:'완밥',
@@ -225,6 +226,7 @@ const TRANS={
     perfectCombo:'Perfect combination!',
     perfectSub:'All macros and key micronutrients are within recommended ranges.',
     recTypePair:'🤝 Pairs well', recTypeNew:'🌟 Try new', recTypeCombo:'💛 Combo idea', recTypeNutrition:'🥗 Nutrition boost',
+    introSrc:'Intro-age basis: WHO Complementary Feeding (2023) · MFDS infant feeding guide · Korean Pediatric Society',
     peerMeals:'🍽 Peer meal ideas', peerHint:'Find real meal examples from babies of the same age.',
     peerDisc:'※ External search results for reference only — not official medical advice. Check for allergies when introducing new foods.',
     fullMealBtn:'All eaten',
@@ -1716,6 +1718,7 @@ function IngDetailCard({name,birthDate,allergy=[],lang='ko'}){
             <span>{verdict.icon}</span>{verdict.title}
           </div>
           <p className="text-xs mt-1 leading-relaxed" style={{color:verdict.tc}}>{verdict.reason}</p>
+          <p className="text-xs mt-1.5 pt-1.5 border-t leading-relaxed" style={{color:verdict.tc,opacity:0.65,borderColor:verdict.tc+'33'}}>📚 {t(lang,'introSrc')}</p>
         </div>
         {/* 탄단지 */}
         {macro&&(
