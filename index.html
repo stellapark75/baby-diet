@@ -139,6 +139,8 @@ const TRANS={
     perfectCombo:'완벽한 조합이에요!',
     perfectSub:'탄단지 비율과 주요 미량영양소가 모두 권장 범위 안에 있어요.',
     recTypePair:'🤝 어울리는 재료', recTypeNew:'🌟 새 도전', recTypeCombo:'💛 조합 추천', recTypeNutrition:'🥗 영양 보완',
+    peerMeals:'🍽 또래 이유식 식단 참고', peerHint:'같은 시기 아이들의 식단 예시를 외부에서 찾아볼 수 있어요.',
+    peerDisc:'※ 외부 검색 결과로, 공식 의학정보가 아닌 참고용입니다. 새 재료 도입 시 알레르기를 확인하세요.',
     fullMealBtn:'완밥',
     commercialTag:'시판',
     commTitle:'📋 영양정보 · 원재료 (선택)',
@@ -223,6 +225,8 @@ const TRANS={
     perfectCombo:'Perfect combination!',
     perfectSub:'All macros and key micronutrients are within recommended ranges.',
     recTypePair:'🤝 Pairs well', recTypeNew:'🌟 Try new', recTypeCombo:'💛 Combo idea', recTypeNutrition:'🥗 Nutrition boost',
+    peerMeals:'🍽 Peer meal ideas', peerHint:'Find real meal examples from babies of the same age.',
+    peerDisc:'※ External search results for reference only — not official medical advice. Check for allergies when introducing new foods.',
     fullMealBtn:'All eaten',
     commercialTag:'Store-bought',
     commTitle:'📋 Nutrition & ingredients (optional)',
@@ -474,19 +478,20 @@ function genRecs(meals, liked, allergy, birthDate, lang='ko'){
   Object.entries(IDB).forEach(([cat,items])=>{
     const un=items.filter(i=>!tried.has(i)&&!allergy.includes(i)&&ageOk(i));
     const li=items.filter(i=>allLiked.includes(i));
+    // 좋아하는 재료와의 페어 추천
     if(li.length>0&&un.length>0){
       const pick=un[Math.floor(Math.random()*un.length)];
-      recs.push({id:genId(),cat,
-        title:E?`${li[0]} + ${cat}`:`${li[0]}와 어울리는 ${cat}`,
-        desc:E?`"${pick}" — pairs well with ${li[0]}!`:`"${pick}" — ${li[0]}와 함께 먹으면 좋아요!`,
+      recs.push({id:genId(),cat,title:E?`${pick} + ${li[0]}`:`${pick} + ${li[0]}`,
+        desc:E?`Pairs well with ${li[0]}`:`${li[0]}와(과) 잘 어울려요`,
         type:'pair',color:'#EFF0E0',tc:'#818546'});
     }
-    if(un.length>0){
-      recs.push({id:genId(),cat,
-        title:E?`Try new: ${cat}`:`${cat} 새 도전`,
-        desc:un.slice(0,2).map(p=>`"${p}"`).join(', ')+(E?' — not tried yet':' 아직 안 먹어봤어요'),
+    // 미시도 재료를 개별 추천으로 펼침 (다양성↑)
+    un.forEach(pick=>{
+      const m=MICRO_DB[pick];const s=m?.tags?.[0];
+      recs.push({id:genId(),cat,title:pick,
+        desc:s?(E?`${s} · new try`:`${s} · 새 도전`):(E?'Not tried yet':'아직 안 먹어봤어요'),
         type:'new',color:'#E8F0EC',tc:'#5E8C78'});
-    }
+    });
   });
   if(allLiked.length>=2){
     const combo=allLiked.slice(0,3);
@@ -499,11 +504,14 @@ function genRecs(meals, liked, allergy, birthDate, lang='ko'){
   if(triedProtein.length<2){
     const suggest=IDB.단백질.filter(i=>!tried.has(i)&&!allergy.includes(i)&&ageOk(i)).slice(0,2);
     if(suggest.length>0) recs.push({id:genId(),cat:E?'Nutrition':'영양보완',
-      title:E?'Protein boost':'단백질 보충 추천',
-      desc:suggest.map(s=>`"${s}"`).join(', ')+(E?' — for a balanced meal':' — 균형 잡힌 이유식을 위해 시도해보세요'),
+      title:E?'Protein boost':'단백질 보충',
+      desc:suggest.join(', ')+(E?' — for balance':' — 균형을 위해 시도해보세요'),
       type:'nutrition',color:'#DBEAF5',tc:'#4482A3'});
   }
-  return recs.sort(()=>Math.random()-.5).slice(0,7);
+  // new 타입은 섞어서 다양하게, pair/combo/nutrition은 우선 노출
+  const priority=recs.filter(r=>r.type!=='new');
+  const news=recs.filter(r=>r.type==='new').sort(()=>Math.random()-.5);
+  return [...priority,...news].slice(0,14);
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -725,7 +733,8 @@ function KcalLine({meals,year,month}){
 function NutritionView({meals,birthDate,selectedDate,currentMonth,lang}){
   const rec=useMemo(()=>getRec(birthDate),[birthDate]);
   const[chartMode,setChartMode]=useState('stack');
-  const dayMeals=meals[selectedDate]||[];
+  const[viewDate,setViewDate]=useState(selectedDate); // 일간 분석용 날짜 (탭 내에서 직접 선택)
+  const dayMeals=meals[viewDate]||[];
   const dayM=useMemo(()=>calcMacros(dayMeals),[dayMeals]);
   const year=currentMonth.getFullYear(),month=currentMonth.getMonth();
   const monthM=useMemo(()=>{
@@ -737,7 +746,9 @@ function NutritionView({meals,birthDate,selectedDate,currentMonth,lang}){
     return calcMacros(all);
   },[meals,year,month]);
   const locale=lang==='en'?'en-US':'ko-KR';
-  const dl=new Date(selectedDate+'T00:00:00').toLocaleDateString(locale,{month:'long',day:'numeric',weekday:'short'});
+  const dl=new Date(viewDate+'T00:00:00').toLocaleDateString(locale,{month:'long',day:'numeric',weekday:'short'});
+  const shiftDay=delta=>{const d=new Date(viewDate+'T12:00:00');d.setDate(d.getDate()+delta);setViewDate(fmtD(d));};
+  const todayStr=today();
   return(
     <div className="space-y-5">
       {/* 기준 배너 */}
@@ -761,6 +772,18 @@ function NutritionView({meals,birthDate,selectedDate,currentMonth,lang}){
           </div>}
         </div>
         <div className="bg-white p-4">
+          {/* 날짜 선택기 */}
+          <div className="flex items-center gap-2 mb-3 pb-3 border-b border-gray-100">
+            <button onClick={()=>shiftDay(-1)} className="w-8 h-8 rounded-full border border-[#FFE4D2] text-[#C4703D] flex items-center justify-center hover:bg-[#FFF0E6]">‹</button>
+            <input type="date" value={viewDate} onChange={e=>setViewDate(e.target.value)}
+              className="flex-1 border border-[#FFE4D2] rounded-xl px-3 py-1.5 text-sm text-center"/>
+            <button onClick={()=>shiftDay(1)} className="w-8 h-8 rounded-full border border-[#FFE4D2] text-[#C4703D] flex items-center justify-center hover:bg-[#FFF0E6]">›</button>
+            <button onClick={()=>setViewDate(todayStr)}
+              className="text-xs px-2.5 py-1.5 rounded-full font-semibold border flex-shrink-0"
+              style={viewDate===todayStr?{borderColor:'#D1D5DB',color:'#9CA3AF'}:{borderColor:'#E68A58',color:'#E68A58',background:'#FFF8F0'}}>
+              {t(lang,'today')}
+            </button>
+          </div>
           {dayM.totalKcal<1?(
             <div className="py-12 text-center text-gray-300"><div className="text-4xl mb-2">🍽</div>
               <div className="text-sm">{t(lang,'noRecord')}</div></div>
@@ -768,7 +791,7 @@ function NutritionView({meals,birthDate,selectedDate,currentMonth,lang}){
             <>
               <MacroGrid macros={dayM} rec={rec} lang={lang}/>
               {(()=>{
-                const micro=calcMicro((meals[selectedDate]||[]).flatMap(m=>m.ingredients),1);
+                const micro=calcMicro((meals[viewDate]||[]).flatMap(m=>m.ingredients),1);
                 return(
                   <div className="mt-3 pt-3 border-t border-gray-100">
                     <div className="text-xs font-semibold text-gray-400 mb-2">{t(lang,'microTitle')}</div>
@@ -1417,23 +1440,55 @@ function RecView({meals,liked,allergy,birthDate,lang='ko'}){
         {allLiked.length===0?(
           <div className="text-center py-8 text-gray-300 text-sm"><div className="text-3xl mb-2">⭐</div>{t(lang,'likedHint')}</div>
         ):(
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {recs.map(r=>(
-              <div key={r.id} className="rounded-xl p-3 border-2" style={{background:r.color,borderColor:r.tc+'40'}}>
-                <div className="flex gap-2 mb-1.5">
-                  <span className="text-xs font-bold px-2 py-0.5 rounded-full" style={{background:r.tc,color:'#FFF4ED'}}>{r.cat}</span>
-                  {r.type==='pair'&&<span className="text-xs font-medium" style={{color:r.tc}}>{t(lang,'recTypePair')}</span>}
-                  {r.type==='new'&&<span className="text-xs font-medium" style={{color:r.tc}}>{t(lang,'recTypeNew')}</span>}
-                  {r.type==='combo'&&<span className="text-xs font-medium" style={{color:r.tc}}>{t(lang,'recTypeCombo')}</span>}
-                  {r.type==='nutrition'&&<span className="text-xs font-medium" style={{color:r.tc}}>{t(lang,'recTypeNutrition')}</span>}
+          <div className="divide-y divide-gray-100">
+            {recs.map(r=>{
+              const typeLbl={pair:t(lang,'recTypePair'),new:t(lang,'recTypeNew'),combo:t(lang,'recTypeCombo'),nutrition:t(lang,'recTypeNutrition')}[r.type];
+              return(
+                <div key={r.id} className="flex items-center gap-2.5 py-2">
+                  <span className="flex-shrink-0 rounded-full" style={{width:5,height:34,background:r.tc}}/>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="font-bold text-sm text-gray-800">{r.title}</span>
+                      <span className="text-xs px-1.5 py-0.5 rounded-full" style={{background:r.color,color:r.tc}}>{r.cat}</span>
+                    </div>
+                    <p className="text-xs text-gray-500 mt-0.5">{r.desc}</p>
+                  </div>
+                  <span className="text-xs flex-shrink-0 hidden sm:inline" style={{color:r.tc}}>{typeLbl}</span>
                 </div>
-                <p className="font-bold text-sm" style={{color:r.tc}}>{r.title}</p>
-                <p className="text-xs mt-0.5 text-gray-600">{r.desc}</p>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
+
+      {/* 또래 이유식 식단 참고 (외부 검색 링크) */}
+      {(()=>{
+        const mo=Math.floor((Date.now()-new Date(birthDate))/86400000/30.44);
+        const stageQ=lang==='en'?(mo<=8?'stage 1 baby food':mo<=11?'stage 2 baby food':'stage 3 baby food'):(mo<=8?'초기 이유식':mo<=11?'중기 이유식':'후기 이유식');
+        const q=lang==='en'?`${mo} month baby food menu`:`${mo}개월 이유식 식단`;
+        const enc=encodeURIComponent(q),encS=encodeURIComponent(stageQ);
+        const links=[
+          {icon:'🔍',label:lang==='en'?'Google':'네이버 검색',url:lang==='en'?`https://www.google.com/search?q=${enc}`:`https://search.naver.com/search.naver?query=${enc}`},
+          {icon:'▶️',label:lang==='en'?'YouTube':'유튜브',url:`https://www.youtube.com/results?search_query=${enc}`},
+          {icon:'🍳',label:lang==='en'?'Recipes':'만개의레시피',url:`https://www.10000recipe.com/recipe/list.html?q=${encS}`},
+          {icon:'📷',label:'Instagram',url:`https://www.instagram.com/explore/tags/${encodeURIComponent(lang==='en'?'babyfood':stageQ.replace(/\s/g,''))}/`},
+        ];
+        return(
+          <div className="bg-white rounded-2xl shadow-sm p-4">
+            <h3 className="font-bold text-gray-800 mb-1">{t(lang,'peerMeals')}</h3>
+            <p className="text-xs text-gray-400 mb-3">{t(lang,'peerHint')} <span className="text-[#E68A58] font-semibold">"{q}"</span></p>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              {links.map(l=>(
+                <a key={l.label} href={l.url} target="_blank" rel="noopener noreferrer"
+                  className="flex items-center gap-1.5 justify-center px-2 py-2.5 rounded-xl border border-[#FFE4D2] text-xs font-semibold text-[#C4703D] hover:bg-[#FFF0E6] transition-colors">
+                  <span>{l.icon}</span>{l.label}
+                </a>
+              ))}
+            </div>
+            <p className="text-xs text-gray-300 mt-2.5 leading-relaxed">{t(lang,'peerDisc')}</p>
+          </div>
+        );
+      })()}
       {/* 좋아하는 재료 (식단 포함 자동 수집) */}
       <div className="bg-white rounded-2xl shadow-sm p-4">
         <div className="flex items-center gap-2 mb-3">
@@ -1603,7 +1658,8 @@ function MicroBar({label,val,dri,unit}){
 }
 
 // ── 재료 상세 카드 ─────────────────────────────────────────────────────────────
-function IngDetailCard({name,lang='ko'}){
+function IngDetailCard({name,birthDate,allergy=[],lang='ko'}){
+  const E=lang==='en';
   const macro=lookupM(name);
   const micro=MICRO_DB[name]||(()=>{for(const[k,v]of Object.entries(MICRO_DB)){if(name.includes(k)||k.includes(name))return v;}return null;})();
   if(!macro&&!micro)return(
@@ -1613,6 +1669,27 @@ function IngDetailCard({name,lang='ko'}){
     </div>
   );
   const kcal=macro?(macro.c*4+macro.p*4+macro.f*9):0;
+  // ── 월령별 도입 적합성 판단 (식약처·대한소아과학회 도입 시기 기준) ──
+  const months=birthDate?Math.floor((Date.now()-new Date(birthDate))/86400000/30.44):null;
+  const introM=micro?.intro?.match(/(\d+)\s*개월/);
+  const okMonth=introM?parseInt(introM[1]):6;
+  const isAllergy=allergy.includes(name);
+  let verdict;
+  if(isAllergy){
+    verdict={tone:'bad',icon:'⚠️',bg:'#FEECEC',bd:'#F5B5B5',tc:'#C0392B',
+      title:E?'Caution — flagged item':'주의 — 등록된 알레르기 재료',
+      reason:E?'You flagged this in Settings. Introduce only after consulting a doctor.':'설정에서 주의 재료로 등록했어요. 의사와 상담 후 소량부터 도입하세요.'};
+  }else if(months!==null&&months<okMonth){
+    verdict={tone:'wait',icon:'⏳',bg:'#FFF4E6',bd:'#FFD9A8',tc:'#B26A00',
+      title:E?`Recommended from ${okMonth} months`:`${okMonth}개월부터 권장`,
+      reason:E?`Baby is ${months} months now. Introduce after ${micro?.intro||okMonth+' months'}.`:`현재 ${months}개월이에요. ${micro?.intro||okMonth+'개월'} 이후 도입을 권장해요.`};
+  }else{
+    const strength=micro?.tags?.slice(0,2).join(', ');
+    verdict={tone:'good',icon:'✅',bg:'#E8F4EC',bd:'#A8D5BA',tc:'#2E7D52',
+      title:E?'OK to introduce now':'지금 먹어도 좋아요',
+      reason:(months!==null?(E?`Baby is ${months} months — past the ${micro?.intro||okMonth+' months'} mark. `:`현재 ${months}개월로 ${micro?.intro||okMonth+'개월'} 도입 시기를 지났어요. `):(E?`Introduce from ${micro?.intro||okMonth+' months'}. `:`${micro?.intro||okMonth+'개월'}부터 도입 가능해요. `))
+        +(strength?(E?`Rich in ${strength}.`:`${strength}이(가) 풍부해요.`):'')};
+  }
   return(
     <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden slide-in">
       <div className="px-4 py-3 flex items-start justify-between" style={{background:'linear-gradient(135deg,#FFF0E6,#FFE4D2)'}}>
@@ -1633,6 +1710,13 @@ function IngDetailCard({name,lang='ko'}){
         </div>}
       </div>
       <div className="p-4 space-y-3">
+        {/* 월령별 도입 적합성 */}
+        <div className="rounded-xl px-3 py-2.5 border" style={{background:verdict.bg,borderColor:verdict.bd}}>
+          <div className="flex items-center gap-1.5 font-bold text-sm" style={{color:verdict.tc}}>
+            <span>{verdict.icon}</span>{verdict.title}
+          </div>
+          <p className="text-xs mt-1 leading-relaxed" style={{color:verdict.tc}}>{verdict.reason}</p>
+        </div>
         {/* 탄단지 */}
         {macro&&(
           <div>
@@ -1918,7 +2002,7 @@ function PreviewView({birthDate,allergy,lang='ko'}){
               <div className="mt-2 text-center py-6 text-sm" style={{color:'#C4A090'}}>"{searchQ}"에 해당하는 재료가 없어요</div>
             )}
           </div>
-          {selectedIng&&<IngDetailCard name={selectedIng} lang={lang}/>}
+          {selectedIng&&<IngDetailCard name={selectedIng} birthDate={birthDate} allergy={allergy} lang={lang}/>}
           {!selectedIng&&!searchQ&&(
             <div className="bg-white rounded-2xl shadow-sm p-5">
               <div className="sec-title">{t(lang,'tipTitle')}</div>
