@@ -361,6 +361,7 @@ function parseCommercialText(text){
   const protein=grab(/단백질\s*[:=]?\s*([\d.]+)/);
   const sugar=grab(/당류\s*[:=]?\s*([\d.]+)/);
   const sodium=grab(/나트륨\s*[:=]?\s*([\d.]+)/);
+  const chol=grab(/콜레스테롤\s*[:=]?\s*([\d.]+)/);
   let kcal=grab(/(?:열량|칼로리|에너지)\s*[:=]?\s*([\d.]+)/);
   if(!kcal){const m=t.match(/([\d.]+)\s*kcal/i);if(m)kcal=parseFloat(m[1]);}
   const servingSize=grab(/(?:1회\s*제공량|제공량|총\s*내용량|총내용량|중량)\s*[:=]?\s*([\d.]+)\s*g/);
@@ -374,7 +375,7 @@ function parseCommercialText(text){
     ing.split(/[,，、·・/\s]+/).map(s=>s.trim())
       .filter(s=>s&&(/[가-힣]/.test(s)||/[A-Za-z]{2,}/.test(s)))
   )];
-  return{kcal,carbs,protein,fat,satFat,sodium,sugar,servingSize,ingredients,
+  return{kcal,carbs,protein,fat,satFat,chol,sodium,sugar,servingSize,ingredients,
     hasNutrition:!!(kcal||carbs||protein||fat)};
 }
 
@@ -961,9 +962,30 @@ function MealModal({editMeal,onSave,onClose,allergy,selectedDate,lang='ko'}){
   const[totalMade,setTotalMade]=useState(String(editMeal?.totalMadeGrams||''));
   const[totalEaten,setTotalEaten]=useState(String(editMeal?.totalEatenGrams||''));
 
-  // 시판 영양/원재료 자유 입력 (사진 스캔 없이 텍스트 한 칸 → 자동 파싱)
+  // 시판 영양/원재료 자유 입력 (사진 스캔 없이 텍스트 한 칸 → 자동 파싱 후 직접 편집 가능)
+  const numStr=v=>v?String(v):'';
+  const[prodName,setProdName]=useState(editMeal?.isCommercial?(editMeal?.ingredients?.[0]?.name||''):'');
   const[commText,setCommText]=useState(editMeal?.commercialText||'');
-  const commParsed=React.useMemo(()=>parseCommercialText(commText),[commText]);
+  const[commNutri,setCommNutri]=useState(()=>{
+    const cn=editMeal?.commercialNutrition||{};
+    return {kcal:numStr(cn.kcal),carbs:numStr(cn.carbs),protein:numStr(cn.protein),fat:numStr(cn.fat),
+      satFat:numStr(cn.satFat),chol:numStr(cn.chol),sodium:numStr(cn.sodium),sugar:numStr(cn.sugar)};
+  });
+  const[commIngs,setCommIngs]=useState(editMeal?.commercialIngredients||[]);
+  const[commTotalG,setCommTotalG]=useState(String(editMeal?.commercialTotalG||''));
+  const[newIng,setNewIng]=useState('');
+  const firstParse=React.useRef(true);
+  React.useEffect(()=>{
+    if(firstParse.current){firstParse.current=false;return;} // 초기 editMeal 값 보존
+    const p=parseCommercialText(commText);
+    setCommNutri({kcal:numStr(p.kcal),carbs:numStr(p.carbs),protein:numStr(p.protein),fat:numStr(p.fat),
+      satFat:numStr(p.satFat),chol:numStr(p.chol),sodium:numStr(p.sodium),sugar:numStr(p.sugar)});
+    setCommIngs(p.ingredients);
+    if(p.servingSize)setCommTotalG(String(p.servingSize));
+  },[commText]);
+  const setNutri=(k,v)=>setCommNutri(p=>({...p,[k]:v}));
+  const addCommIng=()=>{const v=newIng.trim();if(v&&!commIngs.includes(v)){setCommIngs(p=>[...p,v]);}setNewIng('');};
+  const commHasNutri=!!(commNutri.kcal||commNutri.carbs||commNutri.protein||commNutri.fat||commNutri.satFat||commNutri.chol||commNutri.sodium||commNutri.sugar);
 
   const addIng=()=>setIngs(p=>[...p,{id:genId(),name:'',grams:''}]);
   const remIng=id=>setIngs(p=>p.filter(i=>i.id!==id));
@@ -977,24 +999,27 @@ function MealModal({editMeal,onSave,onClose,allergy,selectedDate,lang='ko'}){
   const eatPct=madeN>0?Math.round(eatenN/madeN*100):null;
 
   const handleSave=()=>{
-    const v=ings.filter(i=>i.name.trim());
-    if(!v.length){alert(lang==='en'?(isCommercial?'Enter the product name.':'Enter at least one ingredient.'):(isCommercial?'제품명을 입력해주세요.':'재료를 1개 이상 입력해주세요.'));return;}
     if(isCommercial){
-      const p=commParsed;
-      const cn=p.hasNutrition
-        ?{kcal:p.kcal||0,carbs:p.carbs||0,protein:p.protein||0,fat:p.fat||0,
-          satFat:p.satFat||0,sodium:p.sodium||0,sugar:p.sugar||0,servingSize:p.servingSize||0}
+      if(!prodName.trim()){alert(lang==='en'?'Enter the product name.':'제품명을 입력해주세요.');return;}
+      const num=v=>Number(v)||0;
+      const cn=commHasNutri
+        ?{kcal:num(commNutri.kcal),carbs:num(commNutri.carbs),protein:num(commNutri.protein),fat:num(commNutri.fat),
+          satFat:num(commNutri.satFat),chol:num(commNutri.chol),sodium:num(commNutri.sodium),sugar:num(commNutri.sugar),
+          servingSize:num(commTotalG)}
         :null;
       onSave({
         id:editMeal?.id||genId(),type,time,memo,liked,isCommercial:true,
         commercialNutrition:cn,
         commercialText:commText,
-        commercialIngredients:p.ingredients,
+        commercialTotalG:num(commTotalG),
+        commercialIngredients:commIngs.filter(x=>x&&x.trim()),
         totalMadeGrams:0,totalEatenGrams:0,
-        ingredients:v.map(i=>({id:i.id,name:i.name.trim(),grams:0,isCommercial:true}))
+        ingredients:[{id:editMeal?.ingredients?.[0]?.id||genId(),name:prodName.trim(),grams:0,isCommercial:true}]
       }, date);
       return;
     }
+    const v=ings.filter(i=>i.name.trim());
+    if(!v.length){alert(lang==='en'?'Enter at least one ingredient.':'재료를 1개 이상 입력해주세요.');return;}
     onSave({
       id:editMeal?.id||genId(),type,time,memo,liked,isCommercial:false,
       commercialNutrition:null,commercialText:'',commercialIngredients:[],
@@ -1058,81 +1083,107 @@ function MealModal({editMeal,onSave,onClose,allergy,selectedDate,lang='ko'}){
                 className="border border-gray-200 rounded-xl px-3 py-2 w-full text-sm"/>
             </div>
 
-            {/* ─── 시판 영양·원재료 자유 입력 ─── */}
+            {/* ─── 시판 입력 (제품명 상단 → 자유 텍스트 → 편집 가능한 영양/원재료) ─── */}
             {isCommercial&&(
               <div className="bg-[#E8F4F8] border border-[#9BC0CC] rounded-xl p-3 space-y-3">
-                <div className="font-semibold text-xs text-[#2A6280]">{t(lang,'commTitle')}</div>
-                <p className="text-xs text-[#4482A3]">{t(lang,'commHint')}</p>
+                {/* 제품명 (단일 칸, 상단) */}
+                <div>
+                  <label className="block text-xs font-semibold text-[#2A6280] mb-1">{lang==='en'?'Product name':'제품명'}</label>
+                  <input type="text" value={prodName} onChange={e=>setProdName(e.target.value)}
+                    placeholder={lang==='en'?'e.g. Heinz apple purée':'예: 하인즈 사과퓨레'}
+                    className="w-full border border-[#9BC0CC] rounded-xl px-3 py-2 text-sm bg-white"/>
+                </div>
 
-                <textarea value={commText} onChange={e=>setCommText(e.target.value)}
-                  rows={3} placeholder={t(lang,'commPlaceholder')}
-                  className="w-full border border-[#9BC0CC] rounded-xl px-3 py-2 text-sm bg-white resize-none"/>
+                <div className="border-t border-[#9BC0CC] pt-2.5">
+                  <div className="font-semibold text-xs text-[#2A6280] mb-1">{t(lang,'commTitle')}</div>
+                  <p className="text-xs text-[#4482A3] mb-2">{t(lang,'commHint')}</p>
+                  <textarea value={commText} onChange={e=>setCommText(e.target.value)}
+                    rows={3} placeholder={t(lang,'commPlaceholder')}
+                    className="w-full border border-[#9BC0CC] rounded-xl px-3 py-2 text-sm bg-white resize-none"/>
+                </div>
 
-                {/* 자동 인식 결과 미리보기 */}
-                {(commParsed.hasNutrition||commParsed.ingredients.length>0)?(
-                  <div className="space-y-2.5 border-t border-[#9BC0CC] pt-2.5">
-                    {commParsed.hasNutrition&&(
-                      <div>
-                        <div className="text-xs font-semibold text-gray-500 mb-1">{t(lang,'commParsedNutri')}</div>
-                        <div className="flex flex-wrap gap-1.5">
-                          {[
-                            ['kcal',commParsed.kcal,'kcal'],
-                            [t(lang,'macros').carbs,commParsed.carbs,'g'],
-                            [t(lang,'macros').protein,commParsed.protein,'g'],
-                            [t(lang,'macros').fat,commParsed.fat,'g'],
-                            [lang==='en'?'sat.fat':'포화지방',commParsed.satFat,'g'],
-                            [lang==='en'?'sugar':'당류',commParsed.sugar,'g'],
-                            [lang==='en'?'sodium':'나트륨',commParsed.sodium,'mg'],
-                            [t(lang,'commServing'),commParsed.servingSize,'g'],
-                          ].filter(([,v])=>v>0).map(([lbl,v,u])=>(
-                            <span key={lbl} className="text-xs bg-white border border-[#9BC0CC] text-[#2A6280] px-2 py-1 rounded-lg">
-                              {lbl} <b>{v}{u}</b>
-                            </span>
-                          ))}
+                {/* 인식된 영양정보 — 직접 편집 가능 */}
+                <div className="border-t border-[#9BC0CC] pt-2.5">
+                  <div className="text-xs font-semibold text-gray-500 mb-1.5">{t(lang,'commParsedNutri')} <span className="font-normal text-gray-400">({lang==='en'?'editable':'직접 수정 가능'})</span></div>
+                  <div className="grid grid-cols-4 gap-1.5">
+                    {[
+                      ['kcal','kcal','kcal'],
+                      ['carbs',t(lang,'macros').carbs,'g'],
+                      ['protein',t(lang,'macros').protein,'g'],
+                      ['fat',t(lang,'macros').fat,'g'],
+                      ['satFat',lang==='en'?'sat.fat':'포화지방','g'],
+                      ['sugar',lang==='en'?'sugar':'당류','g'],
+                      ['chol',lang==='en'?'choles.':'콜레스테롤','mg'],
+                      ['sodium',lang==='en'?'sodium':'나트륨','mg'],
+                    ].map(([k,lbl,u])=>(
+                      <div key={k}>
+                        <div className="text-gray-400 text-center mb-0.5" style={{fontSize:9}}>{lbl}</div>
+                        <div className="flex items-center bg-white border border-[#9BC0CC] rounded-lg overflow-hidden">
+                          <input type="number" value={commNutri[k]} onChange={e=>setNutri(k,e.target.value)}
+                            className="w-full px-1 py-1.5 text-xs text-center bg-transparent" placeholder="0" min="0"/>
+                          <span className="text-gray-300 pr-1" style={{fontSize:9}}>{u}</span>
                         </div>
                       </div>
-                    )}
-                    {commParsed.ingredients.length>0&&(
-                      <div>
-                        <div className="text-xs font-semibold text-gray-500 mb-1">{t(lang,'commParsedIng')} ({commParsed.ingredients.length})</div>
-                        <div className="flex flex-wrap gap-1">
-                          {commParsed.ingredients.map((nm,i)=>(
-                            <span key={i} className="text-xs bg-[#DBEAF5] text-[#2A6280] px-2 py-0.5 rounded-full">{nm}</span>
-                          ))}
-                        </div>
-                      </div>
-                    )}
+                    ))}
                   </div>
-                ):commText.trim()?(
-                  <p className="text-xs text-[#4482A3] opacity-70">{t(lang,'commNothing')}</p>
-                ):null}
+                </div>
+
+                {/* 총 용량 */}
+                <div className="flex items-center gap-2">
+                  <label className="text-xs font-semibold text-gray-500 flex-shrink-0">{lang==='en'?'Total volume':'총 용량'}</label>
+                  <input type="number" value={commTotalG} onChange={e=>setCommTotalG(e.target.value)}
+                    placeholder="0" min="0"
+                    className="flex-1 border border-[#9BC0CC] rounded-xl px-3 py-1.5 text-sm text-center bg-white"/>
+                  <span className="text-xs text-gray-400 flex-shrink-0">g / ml</span>
+                </div>
+
+                {/* 인식된 원재료 — 직접 편집 가능 */}
+                <div className="border-t border-[#9BC0CC] pt-2.5">
+                  <div className="text-xs font-semibold text-gray-500 mb-1.5">{t(lang,'commParsedIng')} ({commIngs.length}) <span className="font-normal text-gray-400">({lang==='en'?'editable':'추가·삭제 가능'})</span></div>
+                  <div className="flex flex-wrap gap-1 mb-2">
+                    {commIngs.map((nm,i)=>(
+                      <span key={i} className="text-xs bg-[#DBEAF5] text-[#2A6280] pl-2 pr-1 py-0.5 rounded-full flex items-center gap-1">
+                        {nm}
+                        <button onClick={()=>setCommIngs(p=>p.filter((_,idx)=>idx!==i))} className="text-[#7AA4BC] hover:text-red-400 leading-none">×</button>
+                      </span>
+                    ))}
+                    {commIngs.length===0&&<span className="text-xs text-gray-400">{lang==='en'?'None yet':'아직 없어요'}</span>}
+                  </div>
+                  <div className="flex gap-1.5">
+                    <input type="text" value={newIng} onChange={e=>setNewIng(e.target.value)}
+                      onKeyDown={e=>{if(e.key==='Enter'){e.preventDefault();addCommIng();}}}
+                      placeholder={lang==='en'?'Add ingredient → Enter':'재료 추가 → Enter'}
+                      className="flex-1 border border-[#9BC0CC] rounded-lg px-2 py-1.5 text-xs bg-white"/>
+                    <button onClick={addCommIng} className="text-xs px-3 py-1.5 rounded-lg bg-[#4482A3] text-white font-semibold flex-shrink-0">{t(lang,'add')}</button>
+                  </div>
+                </div>
               </div>
             )}
 
-            {/* 재료 목록 (홈메이드 또는 시판 제품명) */}
+            {/* 재료 목록 (홈메이드 전용) */}
+            {!isCommercial&&(
             <div>
               <div className="flex items-center justify-between mb-1.5">
-                <label className="text-xs font-semibold text-gray-500">
-                  {isCommercial?(lang==='en'?'Product name':'제품명'):t(lang,'ingsLabel')}
-                </label>
+                <label className="text-xs font-semibold text-gray-500">{t(lang,'ingsLabel')}</label>
                 <button onClick={addIng} className="text-xs text-[#E68A58] font-semibold">{t(lang,'addIng')}</button>
               </div>
               <div className="space-y-1.5">
                 {ings.map(ing=>(
                   <div key={ing.id} className="flex gap-1.5 items-center">
-                    <input type="text" placeholder={isCommercial?(lang==='en'?'Product name (e.g. Heinz apple purée)':'제품명 (예: 하인즈 사과퓨레)'):(lang==='en'?'Ingredient (e.g. carrot)':'재료명 (예: 당근)')} value={ing.name}
+                    <input type="text" placeholder={lang==='en'?'Ingredient (e.g. carrot)':'재료명 (예: 당근)'} value={ing.name}
                       onChange={e=>updIng(ing.id,'name',e.target.value)}
-                      className={`flex-1 border rounded-xl px-2.5 py-2 text-sm ${allergy.includes(ing.name)?'border-red-300 bg-red-50':isCommercial?'border-[#9BC0CC] bg-[#E8F4F8]':'border-gray-200'}`}/>
-                    {!isCommercial&&<input type="number" placeholder="g" value={ing.grams}
+                      className={`flex-1 border rounded-xl px-2.5 py-2 text-sm ${allergy.includes(ing.name)?'border-red-300 bg-red-50':'border-gray-200'}`}/>
+                    <input type="number" placeholder="g" value={ing.grams}
                       onChange={e=>updIng(ing.id,'grams',e.target.value)}
-                      className="w-20 border border-gray-200 rounded-xl px-2 py-2 text-sm text-center" min="0"/>}
-                    {!isCommercial&&!lookupM(ing.name)&&ing.name&&<span className="text-amber-400 text-xs">?</span>}
+                      className="w-20 border border-gray-200 rounded-xl px-2 py-2 text-sm text-center" min="0"/>
+                    {!lookupM(ing.name)&&ing.name&&<span className="text-amber-400 text-xs">?</span>}
                     {ings.length>1&&<button onClick={()=>remIng(ing.id)} className="text-gray-300 hover:text-red-400 text-lg leading-none">×</button>}
                   </div>
                 ))}
               </div>
-              {!isCommercial&&ingSum>0&&<div className="text-xs text-gray-400 mt-1.5 text-right">{t(lang,'ingTotal2')}: {ingSum}g</div>}
+              {ingSum>0&&<div className="text-xs text-gray-400 mt-1.5 text-right">{t(lang,'ingTotal2')}: {ingSum}g</div>}
             </div>
+            )}
 
             {/* 제조량·섭취량 (홈메이드만) */}
             {!isCommercial&&(
